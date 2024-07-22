@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
@@ -24,13 +25,12 @@ var limiter = rate.NewLimiter(8, 8) // 每秒最多 8 个请求
 func main() {
 	router := gin.Default()
 
-	// 使用中间件进行限流
-	router.Use(limitRate)
+	// 设置静态文件目录
+	router.Use(static.Serve("/", static.LocalFile("./ui/build", true)))
 
-	// 使用默认配置启用CORS
-	router.Use(cors.Default())
-
-	router.GET("/api/v1/generate", randomHandler)
+	// api
+	api := router.Group("/api").Use(cors.Default()).Use(limitRate)
+	api.GET("/v1/generate", randomHandler)
 
 	fmt.Println("Server started on port 8080")
 	router.Run(":8080")
@@ -38,15 +38,16 @@ func main() {
 
 func randomHandler(c *gin.Context) {
 	// 解析请求参数
-	length, err := strconv.Atoi(c.Query("length"))
-	if err != nil || length < 1 || length > 16 {
-		writeErrorResponse(c, "Invalid length parameter")
-		return
-	}
-
 	dataType := c.Query("type")
 	if dataType != "uint8" && dataType != "uint16" && dataType != "uint32" {
 		writeErrorResponse(c, "Invalid type parameter")
+		return
+	}
+
+	length, err := strconv.Atoi(c.Query("length"))
+	// 限制一次最大读取 64 字节的数据
+	if err != nil || length < 1 || (dataType == "uint8" && length > 64) || (dataType == "uint16" && length > 32) || (dataType == "uint32" && length > 16) {
+		writeErrorResponse(c, "Invalid length parameter")
 		return
 	}
 
